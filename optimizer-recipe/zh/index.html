@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>八个学习率和三条调度曲线：读 NextTransformer 的优化器配方</title>
+  <meta name="description" content="NextTransformer 冻结优化器，是为了让架构之间可比。这篇文章把配方从代码里读出来：两个迁移标量、八组参数、一个其实是参数量的 weight decay，以及同时运行的三条调度曲线。">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="八个学习率和三条调度曲线：读 NextTransformer 的优化器配方">
+  <meta property="og:description" content="两个迁移标量、八组参数、一个其实是参数量的 weight decay，以及同时运行的三条调度曲线。">
+  <meta property="og:image" content="https://interactive-active-ai.github.io/NextTransformer/brand/social-preview.jpg">
+  <link rel="icon" href="../../attnres-canon/favicon.svg" type="image/svg+xml">
+  <link rel="alternate" hreflang="en" href="../">
+  <!-- 本文沿用首篇文章的样式与品牌素材。 -->
+  <link rel="stylesheet" href="../../attnres-canon/styles.css">
+  <style>
+    .lead { max-width: 60ch; margin: 16px 0 0; color: var(--ink-soft); font-size: 17px; line-height: 1.8; }
+    .formula { display: block; margin: 18px auto; max-width: var(--measure); padding: 16px 20px; border: 1px solid var(--line);
+      border-radius: 12px; background: var(--surface); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 14.5px; line-height: 1.85; overflow-x: auto; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; }
+  </style>
+</head>
+<body>
+<div class="dream-sky" aria-hidden="true"><i></i><i></i><span>✦</span><span>✧</span><span>✦</span></div>
+<div class="progress" aria-hidden="true"><span></span></div>
+<header class="topbar">
+  <div class="brand-cluster">
+    <a class="brand" href="https://interactive-active-ai.github.io/NextTransformer/" aria-label="NextTransformer 观测站"><span class="brand-mark" aria-hidden="true">N<span>↗</span></span><b>NextTransformer</b></a>
+    <a class="iaai-brand" href="https://github.com/Interactive-Active-AI" aria-label="IAAI · Interactive &amp; Active AI"><img src="../../attnres-canon/assets/iaai.png" width="34" height="34" alt="IAAI logo"><b>IAAI</b><span>Interactive <i>&amp;</i> Active AI</span></a>
+  </div>
+  <nav class="header-actions" aria-label="站内链接">
+    <a class="header-link" href="../../">博客</a>
+    <a class="header-link" href="https://interactive-active-ai.github.io/NextTransformer/">观测站</a>
+    <a class="header-link" href="https://interactive-active-ai.github.io/NextTransformer/docs/zh-cn/">文档</a>
+    <a class="repo-button" href="https://github.com/Interactive-Active-AI/NextTransformer" aria-label="NextTransformer GitHub 仓库"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span>GitHub</span></a>
+    <a class="pill" href="../" hreflang="en" lang="en">English</a>
+    <button id="theme-toggle" class="pill" type="button" aria-label="切换深浅色主题">深色</button>
+  </nav>
+</header>
+
+<div class="page">
+<nav class="rail" aria-label="章节">
+  <div class="rail-title">本文目录</div>
+  <ol>
+    <li><a href="#s1"><span>01</span>冻结优化器</a></li>
+    <li><a href="#s2"><span>02</span>两个迁移标量</a></li>
+    <li><a href="#s3"><span>03</span>八组参数</a></li>
+    <li class="sub"><a href="#s3-1">宽度缩放落在哪</a></li>
+    <li class="sub"><a href="#s3-2">恰好覆盖一次</a></li>
+    <li><a href="#s4"><span>04</span>weight decay 其实是参数量</a></li>
+    <li><a href="#s5"><span>05</span>三条调度曲线</a></li>
+    <li><a href="#s6"><span>06</span>刻意不做的事</a></li>
+    <li><a href="#s7"><span>07</span>我们还不知道的</a></li>
+  </ol>
+</nav>
+
+<main id="top">
+<article>
+  <header class="post-head">
+    <p class="eyebrow">NextTransformer 博客 / 协议</p>
+    <h1>八个学习率和三条调度曲线<span class="sr">：</span><em>读 NextTransformer 的优化器配方</em></h1>
+    <p class="post-meta"><span>NextTransformer</span><span>2026 年 11 月</span><span>约 9 分钟</span></p>
+    <p class="lead">优化器通常是一次训练里最该调的部分。在这里它恰恰是谁都不许动的部分，而这条约束塑造了它里面的每一个数字。</p>
+  </header>
+
+  <nav class="toc" aria-label="本文目录">
+    <div class="toc-title">本文目录</div>
+    <ol>
+      <li><a href="#s1">冻结优化器本身就是仪器的一部分</a></li>
+      <li><a href="#s2">两个标量承担迁移</a></li>
+      <li><a href="#s3">不是一个学习率，是八个</a></li>
+      <li class="sub"><a href="#s3-1">3.1 宽度缩放落在哪里，又没落在哪里</a></li>
+      <li class="sub"><a href="#s3-2">3.2 每个参数恰好被覆盖一次</a></li>
+      <li><a href="#s4">weight decay 其实是一个参数量</a></li>
+      <li><a href="#s5">同时运行的三条调度曲线</a></li>
+      <li><a href="#s6">刻意不做的事</a></li>
+      <li><a href="#s7">我们还不知道的</a></li>
+      <li><a href="#refs">出处</a></li>
+    </ol>
+  </nav>
+
+  <section>
+    <h2 id="s1"><span class="no">01</span>冻结优化器本身就是仪器的一部分</h2>
+
+    <p>NextTransformer 比较的是架构。凡是不属于架构的东西都必须按住，否则一次比较衡量的就是调参预算，而不是设计本身。所以优化器由协议钉死，细到每个标量组的 beta 值，而这些钉死的值会被哈希进每份公开结果携带的指纹里。</p>
+
+    <p>这把通常的激励倒了过来。一份调过的配方，想成为眼前这个模型的最优配方；一份冻结的配方，想成为在它没见过的模型上<em>最不意外</em>的配方——因为下一个人提交的架构，必须就着它活下去。带着这个前提读代码，好几处原本显得随意的选择就变得可读了。</p>
+
+    <p>下面的内容都在 <span class="mono">nexttransformer/native/optimizer.py</span> 和 <span class="mono">nexttransformer/protocol/spec.py</span> 里。协议给出的基础学习率是五个数：</p>
+
+    <figure class="tbl" id="tab-base">
+      <figcaption><strong>表 1.</strong> 任何缩放之前的基础学习率。</figcaption>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>参数组</th><th class="num">基础值</th></tr></thead>
+        <tbody>
+          <tr><td>Muon（block 矩阵）</td><td class="num">0.02</td></tr>
+          <tr><td>Embedding</td><td class="num">0.3</td></tr>
+          <tr><td>Unembedding</td><td class="num">0.008</td></tr>
+          <tr><td>标量</td><td class="num">0.5</td></tr>
+          <tr><td>辅助 AdamW</td><td class="num">0.0006</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </figure>
+
+    <p>它们跨越 800 倍，而且没有任何一个是某个参数真正拿到的学习率。</p>
+  </section>
+
+  <section>
+    <h2 id="s2"><span class="no">02</span>两个标量承担迁移</h2>
+
+    <p>在基础学习率和优化器里的实际学习率之间，隔着两个乘子，它们回答的是两个彼此独立的问题。</p>
+
+    <figure class="formula">dscale = (width / 768) <sup>−1/2</sup>
+bscale = sqrt(global_batch_tokens / 524288)</figure>
+
+    <p>两者都写成相对某个参照点的比值，而不是绝对公式，而这个参照点正是当初调出这些学习率的模型：nanochat 的 d12，宽 768，batch 为 2<sup>19</sup> tokens。这份配方并不声称自己知道任意模型的正确学习率，它声称的是：知道怎么把一个它信得过的学习率，搬到另一个宽度、另一个 batch 的模型上。</p>
+
+    <p>协议每步 2<sup>20</sup> tokens，所以对所有正式运行 <span class="mono">bscale</span> 恰好等于 √2，走的是批量平方根规则：batch 翻倍，学习率乘 √2。宽度走的是负二分之一次方，于是宽 1,280 的模型拿到参照值的 0.775 倍，宽 2,048 的拿到 0.612 倍。</p>
+
+    <figure class="tbl" id="tab-dscale">
+      <figcaption><strong>表 2.</strong> T3 各个宽度上的宽度迁移系数。</figcaption>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th class="num">宽度</th><th class="num">768</th><th class="num">1,024</th><th class="num">1,280</th><th class="num">1,792</th><th class="num">2,048</th></tr></thead>
+        <tbody>
+          <tr><td>dscale</td><td class="num">1.000</td><td class="num">0.866</td><td class="num">0.775</td><td class="num">0.655</td><td class="num">0.612</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="s3"><span class="no">03</span>不是一个学习率，是八个</h2>
+
+    <p>这份配方里并没有「一个带学习率的优化器」，而是八到九组参数，每组有自己的学习率、自己的 betas、自己的 weight decay。表 3 是全部。</p>
+
+    <figure class="tbl wide" id="tab-groups">
+      <figcaption><strong>表 3.</strong> 全部参数组。<span class="mono">b</span> 为 bscale，<span class="mono">d</span> 为 dscale。所有 AdamW 组 eps = 1e-10。</figcaption>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>参数组</th><th>学习率</th><th class="num">Betas</th><th class="num">Weight decay</th></tr></thead>
+        <tbody>
+          <tr><td>输出头</td><td class="mono">0.008 · b · d</td><td class="num">(0.8, 0.96)</td><td class="num">0.01</td></tr>
+          <tr><td>词嵌入</td><td class="mono">0.3 · b · d</td><td class="num">(0.8, 0.995)</td><td class="num">0.001</td></tr>
+          <tr><td>Value embeddings</td><td class="mono">0.3 · b · d · 0.5</td><td class="num">(0.8, 0.995)</td><td class="num">0.01</td></tr>
+          <tr><td>残差 lambdas</td><td class="mono">0.5 · b · 0.01</td><td class="num">(0.8, 0.95)</td><td class="num">0.05</td></tr>
+          <tr><td>x0 lambdas</td><td class="mono">0.5 · b</td><td class="num">(0.96, 0.95)</td><td class="num">0</td></tr>
+          <tr><td>Smear 门、smear 与 backout lambda</td><td class="mono">0.2</td><td class="num">(0.8, 0.95)</td><td class="num">0</td></tr>
+          <tr><td>Router 与 halter</td><td class="mono">0.0006 · b · m</td><td class="num">(0.9, 0.95)</td><td class="num">0</td></tr>
+          <tr><td>其余标量</td><td class="mono">0.0006 · b</td><td class="num">(0.9, 0.95)</td><td class="num">0</td></tr>
+          <tr><td>Muon（按矩阵形状分桶）</td><td class="mono">0.02 · b</td><td class="num">β₂ = 0.9</td><td>见第 4 节</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </figure>
+
+    <p>表里有三处细节容易被一眼扫过去。</p>
+
+    <p><strong>betas 并不共享。</strong>词嵌入用 β₂ = 0.995，输出头用 0.96，二阶矩的有效平均窗口差了大约一个数量级。嵌入的梯度是稀疏的——某个 token 的那一行只在这个 token 出现时才被碰到——长窗口是让二阶矩估计可用的唯一办法。输出头每个样本都见到，不需要这个。而 <span class="mono">x0</span> lambdas 干脆把惯例倒了过来：β₁ = 0.96 大于 β₂ = 0.95。</p>
+
+    <p><strong>eps 全线取 1e-10</strong>，比常见的 1e-8 低四个数量级。eps 极小，意味着即使梯度很小，Adam 也仍然贴近纯粹的符号式归一化，而不会在小梯度区间悄悄退化成 SGD。</p>
+
+    <p><strong>smear 门是唯一完全不缩放的学习率</strong>：固定 0.2，不随 batch 也不随宽度变化。模型里其他每一组都会随 batch 移动，只有它被钉死——读起来像是在说，这个门的合适学习率是门自身的性质，而不是这次运行的性质。</p>
+
+    <h3 id="s3-1"><span class="no">3.1</span>宽度缩放落在哪里，又没落在哪里</h3>
+
+    <p>只有三组吃 <span class="mono">dscale</span>：输出头、词嵌入和 value embeddings。Muon 不吃，标量不吃，辅助 AdamW 组也不吃。</p>
+
+    <p>这条界线恰好画在「按词表索引而非按宽度索引」的参数上——这些矩阵的 fan-in 随模型增长，但每一行拿到的梯度贡献次数并不随之增长。block 矩阵则交给 Muon，它的更新经 Newton–Schulz 迭代正交化，范数因此由迭代本身决定而非由梯度尺度决定。这样读下来，配方是把宽度迁移恰好施加在更新规则本身没有提供它的地方。</p>
+
+    <h3 id="s3-2"><span class="no">3.2</span>每个参数恰好被覆盖一次</h3>
+
+    <p>各组建完之后，代码会收集所有尚未认领的参数，把二维的按 <span class="mono">tuple(p.shape)</span> 分进 Muon 桶、其余的归入标量 AdamW 组，然后断言这些组恰好覆盖模型全部参数一次——不重不漏。</p>
+
+    <p>对一个接受外部架构投稿的仓库来说，这条断言在干实事。它要防的并不是崩溃，而是某个新模块的参数悄悄拿到了默认学习率（或者拿到两次），然后在一次谁都不知道配错了的运行上发表结果。按形状分桶则是另一回事：Newton–Schulz 是批量矩阵运算，同形状的矩阵必须一起走。</p>
+  </section>
+
+  <section>
+    <h2 id="s4"><span class="no">04</span>weight decay 其实是一个参数量</h2>
+
+    <p>协议把 weight decay 写成 0.28。没有任何一个参数是按 0.28 衰减的。</p>
+
+    <figure class="formula">wd = 0.28 · bscale · 110,100,912 / 729,810,624  ≈  0.0597</figure>
+
+    <p>这两个常数是 nanochat d12 和 d24 的矩阵参数量。规则来自 nanochat：衰减与矩阵参数量成反比，模型越大，每个参数被衰减得越少。0.28 是以 d12 为单位表达的衰减率，那个比值负责把它换算到真正在训练的模型上。</p>
+
+    <p>参照比较把分母钉在 d24，因为它只训练那一个模型。scaling 研究做不到这一点——它的全部目的就是改变尺寸——所以 <span class="mono">nexttransformer/scaling/optimizer.py</span> 换成了真实的参数量：</p>
+
+    <figure class="formula">scaling_params(model) = block 参数 + 输出头
+muon_weight_decay = 0.28 · bscale · 110,100,912 / scaling_params(model)</figure>
+
+    <p>在 d24 上两者完全一致，这正是这次替换安全的原因：scaling 研究与参照协议在二者重叠之处并不冲突。这是一处很小的工程，作用却不小——一条在尺寸扫描中悄悄改变含义的超参规则，会污染这次扫描本来要测量的那条尺寸曲线。</p>
+  </section>
+
+  <section>
+    <h2 id="s5"><span class="no">05</span>同时运行的三条调度曲线</h2>
+
+    <p>设置调度的只有一个函数，但它让三样东西各走各的曲线。</p>
+
+    <p><strong>学习率。</strong>40 步线性 warmup，然后持平，最后 65% 的训练线性衰减到峰值的 5%。65% 的 warmdown 按惯例算是很长的：整个运行的大部分时间都花在下坡上，而不是待在顶上。</p>
+
+    <p><strong>Muon 动量。</strong>前 400 步从 0.85 爬到 0.97，保持 0.97，然后在 warmdown 期间降到 0.90——降的起点与学习率开始下降的边界完全重合。训练早期权重移动最快，此时动量缓冲里装的历史最新；后期学习率衰减，动量不是收紧而是放开，这让有效步长不至于像单看学习率那样塌得那么快。</p>
+
+    <p><strong>Muon 的 weight decay。</strong>从第 0 步的满值按余弦降到结尾的 0，与学习率曲线彼此独立。正则化在模型还在挑选要表示什么的时候最强，到它开始收敛定形时已经消失。</p>
+
+    <p>学习率调度是每个人都会写下来的那条。另外两条，才是协议如果不钉死、两份投稿之间就会无声不同的东西。</p>
+  </section>
+
+  <section>
+    <h2 id="s6"><span class="no">06</span>刻意不做的事</h2>
+
+    <p>这里没有全局梯度裁剪。对一份冻结协议来说这是个有意的立场：全局裁剪是一张安全网，但它同时会在某个架构的梯度比另一个大的时候悄悄重新缩放这场比较，使得不稳定看上去像是调参差异，而不是设计本身的性质。</p>
+
+    <p>取而代之的是两处定点裁剪，在梯度累积之后、更新之前，只作用于确实需要的组件——Circle 的 halter 和 loopformer 的 conditioner。两者都是架构专属的控制通路，而非普通权重。这个模式对新投稿同样适用：允许例外，但例外要被命名，并且在预实验之前就登记，而不是在预实验过程中被发现。</p>
+  </section>
+
+  <section>
+    <h2 id="s7"><span class="no">07</span>我们还不知道的</h2>
+
+    <p>在这里坦白边界比平时更重要，因为配方是冻结的，不会为每份投稿重新调过。</p>
+
+    <p>基础学习率是在一个模型、一个宽度、一个 batch 上调出来的。两个迁移标量是通行规则，不是在本代码库上做出的测量，而且仓库里目前没有任何东西证明批量平方根规则和宽度负二分之一次方规则在 scaling 研究将要覆盖的整个范围内都成立。T3 跨越宽度 1,024 到 2,048，这是该假设第一次在同一算力预算下被四个点检验——而如果它不成立，表现出来会是尺寸曲线上一段与架构毫无关系的弯曲。</p>
+
+    <p>各组的 betas 和 decay 是继承来的，我们没有任何一项的单独消融。混合专家家族的路由系数则被明确标注为预实验设置，而非已登记的配方。</p>
+
+    <p>这些都不动摇协议要做的那场比较：每个架构面对的是同一份配方，所以两份结果之间的差异仍然是两种设计之间的差异。它的含义是，这份配方是一个固定下来的选择，而不是一个已被证明的最优解；而尺寸曲线，会是第一个告诉我们这个选择有多好的东西。</p>
+  </section>
+
+  <section class="references">
+    <h2 id="refs"><span class="no">08</span>出处</h2>
+    <p class="cite"><span class="mono">nexttransformer/native/optimizer.py</span> —— 参数组、迁移标量与三条调度曲线。</p>
+    <p class="cite"><span class="mono">nexttransformer/scaling/optimizer.py</span> —— 作用于真实训练模型的 weight decay 规则。</p>
+    <p class="cite"><span class="mono">nexttransformer/protocol/spec.py</span> —— 钉死的基础学习率、warmup、warmdown 与最终比例。</p>
+    <p class="cite"><a href="https://interactive-active-ai.github.io/NextTransformer/docs/zh-cn/protocol/training/">优化器、调度与布局</a> —— 这些数字对应的协议文档。</p>
+  </section>
+</article>
+</main>
+</div>
+
+<div class="footer-wrap">
+<footer class="site-footer">
+  <a class="footer-brand" href="https://interactive-active-ai.github.io/NextTransformer/">NextTransformer <span>·</span> 一项关于计算的研究</a>
+  <div><a href="../../">博客</a><a href="https://interactive-active-ai.github.io/NextTransformer/">观测站</a><a href="https://interactive-active-ai.github.io/NextTransformer/docs/zh-cn/">文档</a><a href="https://github.com/Interactive-Active-AI/NextTransformer">GitHub</a></div>
+</footer>
+</div>
+<script src="../../attnres-canon/site.js"></script>
+</body>
+</html>

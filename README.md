@@ -5,6 +5,7 @@ Pages at <https://interactive-active-ai.github.io/NextT-Blogs/>.
 
 | Post | English | Chinese |
 | --- | --- | --- |
+| Eight Learning Rates and Three Schedules: Reading NextTransformer's Optimizer Recipe (Protocol, November 2026) | [`optimizer-recipe/`](optimizer-recipe/) | [`optimizer-recipe/zh/`](optimizer-recipe/zh/) |
 | How Opus Found AttnRes-Canon: The Discovery Trace of an Architecture Search (Arena v1, November 2026) | [`attnres-canon/`](attnres-canon/) | [`attnres-canon/zh/`](attnres-canon/zh/) |
 
 The AttnRes-Canon post comes with a research trace, the session behind it on one time axis:
