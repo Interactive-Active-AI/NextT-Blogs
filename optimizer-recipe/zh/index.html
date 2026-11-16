@@ -15,18 +15,143 @@
   <link rel="stylesheet" href="../../attnres-canon/styles.css">
   <style>
     .lead { max-width: 60ch; margin: 16px 0 0; color: var(--ink-soft); font-size: 17px; line-height: 1.8; }
-    .formula { display: block; margin: 18px auto; max-width: var(--measure); padding: 16px 20px; border: 1px solid var(--line);
-      border-radius: 12px; background: var(--surface); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 14.5px; line-height: 1.85; overflow-x: auto; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; }
-    .abstract ul { margin: 6px 0 0; padding-left: 1.2em; }
-    .abstract li { margin: 6px 0; }
-    .callout { max-width: var(--measure); margin: 20px auto; padding: 14px 18px; border-left: 3px solid var(--blue);
-      border-radius: 0 10px 10px 0; background: var(--blue-soft); }
+    .post-head h1 em { color: var(--blue); }
+    .mono { font-family: var(--mono); font-size: .92em; }
+    .references .cite { white-space: normal; overflow-wrap: anywhere; }
+
+    /* Give wrapped titles a hanging indent under the title, not the section number. */
+    article section > :is(h2, h3[id]) {
+      display: flex; align-items: baseline; gap: .6em;
+      line-height: 1.35; text-wrap: pretty;
+    }
+    article section > h2 {
+      margin-block: clamp(2.75rem, 6vw, 4.25rem) 1rem;
+      padding-block-start: 1.05rem; border-block-start: 1px solid var(--line);
+      font-size: clamp(1.58rem, 3vw, 2rem);
+    }
+    article section > h3[id] { margin-block: 2.35rem .65rem; font-size: clamp(1.25rem, 2vw, 1.45rem); }
+    article .no {
+      flex: none; margin: 0; color: var(--blue);
+      font: 600 .64em/1 var(--mono); font-variant-numeric: tabular-nums;
+    }
+    .references { border: 0; padding: 0; }
+
+    .abstract {
+      padding: 0 clamp(1rem, 3vw, 2rem); background: var(--surface);
+      border: 1px solid var(--blue-line); border-radius: 14px;
+    }
+    .abstract-label {
+      display: block; width: fit-content; margin-block-start: 1.3rem; padding: 0;
+      border: 0; border-radius: 0; background: none; color: var(--blue);
+      font-size: 1.32rem; line-height: 1.5;
+    }
+    .abstract ul { padding: 0; margin: .45rem 0 .5rem; list-style: none; }
+    .abstract li {
+      display: grid; grid-template-columns: minmax(11rem, 30%) 1fr; gap: 1.5rem;
+      align-items: baseline; margin: 0; padding: .82rem 0;
+      border-block-start: 1px solid var(--line); font-size: 1rem; line-height: 1.75;
+    }
+    .abstract li:first-child { border-color: var(--blue-line); }
+    .abstract li strong { color: var(--ink-strong); }
+
+    .formula, .callout {
+      margin-block: 1.25rem; padding: .9rem clamp(.9rem, 2vw, 1.3rem);
+      border: 1px solid var(--blue-line); border-radius: 10px; color: var(--ink-strong);
+    }
+    .formula {
+      white-space: pre-wrap; background: var(--surface);
+      font: .94rem/1.85 var(--mono); font-variant-numeric: tabular-nums;
+    }
+    .callout { border-inline-start: 3px solid var(--blue); background: var(--blue-soft); }
     .callout p { margin: 0; }
-    .sched { display: block; width: 100%; height: auto; }
+    .callout strong { color: var(--blue); }
+
+    .table-wrap, #fig-schedule .fig-body { overscroll-behavior-x: contain; }
+    .table-wrap thead th { white-space: nowrap; background: var(--blue-soft); color: var(--ink); }
+    .table-wrap tbody th {
+      vertical-align: top; color: var(--ink-strong); font: inherit; font-weight: 600;
+      letter-spacing: normal; padding-block: .7rem;
+    }
+    .table-wrap tbody tr:last-child th { border-bottom: 0; }
+    .table-wrap :is(th, td) { padding-inline: .75rem; }
+    #tab-groups table { min-width: 49rem; table-layout: fixed; }
+    #tab-groups .group-name { width: 16%; }
+    #tab-groups .group-desc { width: 30%; }
+    #tab-groups .group-lr { width: 18%; }
+    #tab-groups .group-peak { width: 10%; }
+    #tab-groups .group-betas { width: 14%; }
+    #tab-groups .group-decay { width: 12%; }
+    #tab-groups td.mono { white-space: nowrap; color: var(--blue); }
+    #tab-groups td:last-child { text-align: right; }
+    #tab-dscale table { min-width: 37rem; }
+    #tab-wd table { min-width: 33rem; }
+    .tbl:not(#tab-base) tr > th:first-child {
+      position: sticky; inset-inline-start: 0; box-shadow: inset -1px 0 var(--line);
+    }
+    .tbl:not(#tab-base) tbody th { background: var(--surface); }
+
+    .parameter-notes { border-block: 1px solid var(--line); }
+    .parameter-note + .parameter-note { border-block-start: 1px solid var(--line); }
+    /* The visible heading names the native disclosure. The whole heading row is clickable. */
+    .parameter-note { display: grid; }
+    .parameter-note > h3, .parameter-note > details { grid-area: 1 / 1; }
+    .parameter-note > h3 {
+      z-index: 1; align-self: start; margin: 0; padding: .8rem 2.5rem .8rem .25rem;
+      font-size: 1.06rem; line-height: 1.55; pointer-events: none;
+    }
+    .parameter-note summary {
+      min-height: 3.3rem; display: flex; justify-content: flex-end; align-items: center;
+      padding-inline: 1rem; border-radius: 4px; color: var(--blue); cursor: pointer;
+    }
+    .parameter-note summary::-webkit-details-marker { display: none; }
+    .parameter-note summary::after {
+      content: ""; width: .5rem; height: .5rem; border: solid currentColor;
+      border-width: 0 1.5px 1.5px 0; transform: rotate(45deg);
+    }
+    .parameter-note details[open] summary::after { transform: rotate(225deg); }
+    .parameter-note summary:hover { background: var(--blue-soft); }
+    .parameter-note details p { margin: .4rem .25rem 1rem; }
+    :is(summary, .table-wrap, #fig-schedule .fig-body):focus-visible {
+      outline: 2px solid var(--blue); outline-offset: 2px;
+    }
+
+    .muon-steps { list-style: decimal; margin-block: 1rem 1.25rem; padding-left: 2.5rem; }
+    .muon-steps li { margin: 0; padding: .48rem .8rem; border-block-end: 1px solid var(--line); }
+    .muon-steps li::marker { color: var(--blue); font: 600 .9em var(--mono); }
+    .muon-steps li:last-child { border: 0; }
+    .muon-steps .key-step {
+      border-inline-start: 3px solid var(--blue); border-block-end-color: transparent;
+      border-radius: 0 6px 6px 0; background: var(--blue-soft); color: var(--ink-strong);
+    }
+    .key-step strong { color: var(--blue); }
+
+    #fig-schedule .fig-body { overflow-x: auto; }
+    .fig-body svg.sched { min-width: 760px; }
+    @media (max-width: 650px) {
+      .abstract li { grid-template-columns: 1fr; gap: .12rem; }
+      .table-wrap table { font-size: .875rem; }
+      .table-wrap thead th { font-size: .77rem; }
+      .table-wrap :is(th, td) { padding-inline: .6rem; }
+      /* At 390px the group and its formula fit in the first view. At the other end
+         the pinned group leaves room for all three numeric columns. */
+      #tab-groups table { min-width: 38.4rem; }
+      #tab-groups :is(td, th) { padding-inline: .45rem; }
+      #tab-groups .group-name { width: 6rem; }
+      #tab-groups .group-desc { width: 8.4rem; }
+      #tab-groups .group-lr { width: 7.8rem; }
+      #tab-groups .group-peak { width: 4.55rem; }
+      #tab-groups .group-betas { width: 5.7rem; }
+      #tab-groups .group-decay { width: 5.95rem; }
+      .muon-steps { padding-inline-start: 1.85rem; }
+    }
+    @media print {
+      .parameter-note details::details-content { display: block; content-visibility: visible; }
+      .parameter-note summary::after { display: none; }
+      #fig-schedule .fig-body { overflow: visible; }
+      .fig-body svg.sched { min-width: 0; }
+    }
     .sched .grid { stroke: var(--line); stroke-width: 1; }
-    .sched .tick, .sched .psub { fill: var(--faint); font-size: 12px; }
+    .sched .tick, .sched .psub { fill: var(--muted); font-size: 12px; }
     .sched .pname { fill: var(--ink-strong); font-size: 13.5px; font-weight: 650; }
     .sched .note { fill: var(--muted); font-size: 12px; }
     .sched .note.eff { fill: var(--rose); }
@@ -87,7 +212,7 @@
 
   <div class="abstract">
     <div class="abstract-label">先说结论</div>
-    <ul>
+    <ul role="list">
       <li><strong>优化器是比赛规则。</strong>所有架构用同一套优化器。学习率、warmup、衰减这些字段写在协议里，配置文件改动任何一个，加载时就会报错。</li>
       <li><strong>协议里写的不是最终值。</strong>基础学习率还要乘「批量系数」和「宽度系数」。在 49B 排行榜的模型上，两个系数一个是 √2、一个是 1/√2，正好抵消。</li>
       <li><strong>参数分 8 组，各有各的学习率。</strong>峰值从 0.00085 到 0.71，相差 800 多倍；控制历史窗口的 β₂ 从约 20 步到约 200 步。</li>
@@ -134,16 +259,16 @@
     <p>协议给出的是 5 个「基础学习率」：</p>
 
     <figure class="tbl" id="tab-base">
-      <figcaption><strong>表 1.</strong> 协议写死的基础学习率，还没乘任何系数。</figcaption>
+      <figcaption id="tab-base-caption"><strong>表 1.</strong> 协议写死的基础学习率，还没乘任何系数。</figcaption>
       <div class="table-wrap">
       <table>
-        <thead><tr><th>参数组</th><th class="num">基础值</th><th>管哪些参数</th></tr></thead>
+        <thead><tr><th scope="col">参数组</th><th scope="col" class="num">基础值</th><th scope="col">管哪些参数</th></tr></thead>
         <tbody>
-          <tr><td>Muon</td><td class="num">0.02</td><td>注意力和 MLP 里的大矩阵</td></tr>
-          <tr><td>Embedding</td><td class="num">0.3</td><td>词嵌入、value embeddings</td></tr>
-          <tr><td>Unembedding</td><td class="num">0.008</td><td>输出头</td></tr>
-          <tr><td>标量</td><td class="num">0.5</td><td>每层一个的残差系数和 x0 系数</td></tr>
-          <tr><td>辅助 AdamW</td><td class="num">0.0006</td><td>其余小参数</td></tr>
+          <tr><th scope="row">Muon</th><td class="num">0.02</td><td>注意力和 MLP 里的大矩阵</td></tr>
+          <tr><th scope="row">Embedding</th><td class="num">0.3</td><td>词嵌入、value embeddings</td></tr>
+          <tr><th scope="row">Unembedding</th><td class="num">0.008</td><td>输出头</td></tr>
+          <tr><th scope="row">标量</th><td class="num">0.5</td><td>每层一个的残差系数和 x0 系数</td></tr>
+          <tr><th scope="row">辅助 AdamW</th><td class="num">0.0006</td><td>其余小参数</td></tr>
         </tbody>
       </table>
       </div>
@@ -165,15 +290,15 @@
     <p>到了 scaling 研究，宽度从 1,024 变到 2,048，两个系数就不再抵消了：</p>
 
     <figure class="tbl" id="tab-dscale">
-      <figcaption><strong>表 2.</strong> T3 各宽度上，词嵌入和输出头实际的峰值学习率。b = √2。</figcaption>
-      <div class="table-wrap">
+      <figcaption id="tab-dscale-caption"><strong>表 2.</strong> T3 各宽度上，词嵌入和输出头实际的峰值学习率。b = √2。</figcaption>
+      <div class="table-wrap" role="region" aria-labelledby="tab-dscale-caption" tabindex="0">
       <table>
-        <thead><tr><th>宽度</th><th class="num">1,024</th><th class="num">1,280</th><th class="num">1,536（排行榜）</th><th class="num">1,792</th><th class="num">2,048</th></tr></thead>
+        <thead><tr><th scope="col">宽度</th><th scope="col" class="num">1,024</th><th scope="col" class="num">1,280</th><th scope="col" class="num">1,536（排行榜）</th><th scope="col" class="num">1,792</th><th scope="col" class="num">2,048</th></tr></thead>
         <tbody>
-          <tr><td>宽度系数 d</td><td class="num">0.866</td><td class="num">0.775</td><td class="num">0.707</td><td class="num">0.655</td><td class="num">0.612</td></tr>
-          <tr><td>b × d</td><td class="num">1.225</td><td class="num">1.095</td><td class="num">1.000</td><td class="num">0.926</td><td class="num">0.866</td></tr>
-          <tr><td>词嵌入学习率</td><td class="num">0.367</td><td class="num">0.329</td><td class="num">0.300</td><td class="num">0.278</td><td class="num">0.260</td></tr>
-          <tr><td>输出头学习率</td><td class="num">0.0098</td><td class="num">0.0088</td><td class="num">0.0080</td><td class="num">0.0074</td><td class="num">0.0069</td></tr>
+          <tr><th scope="row">宽度系数 d</th><td class="num">0.866</td><td class="num">0.775</td><td class="num">0.707</td><td class="num">0.655</td><td class="num">0.612</td></tr>
+          <tr><th scope="row">b × d</th><td class="num">1.225</td><td class="num">1.095</td><td class="num">1.000</td><td class="num">0.926</td><td class="num">0.866</td></tr>
+          <tr><th scope="row">词嵌入学习率</th><td class="num">0.367</td><td class="num">0.329</td><td class="num">0.300</td><td class="num">0.278</td><td class="num">0.260</td></tr>
+          <tr><th scope="row">输出头学习率</th><td class="num">0.0098</td><td class="num">0.0088</td><td class="num">0.0080</td><td class="num">0.0074</td><td class="num">0.0069</td></tr>
         </tbody>
       </table>
       </div>
@@ -186,19 +311,27 @@
     <p>这份配方里没有「一个学习率」。模型参数被分成 8 组，每组有自己的学习率、betas 和 weight decay。表 3 列出了全部，「排行榜上」一列是排行榜模型实际的峰值学习率。</p>
 
     <figure class="tbl wide" id="tab-groups">
-      <figcaption><strong>表 3.</strong> 全部参数组。b = √2 是批量系数，d 是宽度系数；「排行榜上」取宽 1,536 的 d24，此时 b × d = 1。所有 AdamW 组的 eps 都是 1e-10。</figcaption>
-      <div class="table-wrap">
+      <figcaption id="tab-groups-caption"><strong>表 3.</strong> 全部参数组。b = √2 是批量系数，d 是宽度系数；「排行榜上」取宽 1,536 的 d24，此时 b × d = 1。所有 AdamW 组的 eps 都是 1e-10。</figcaption>
+      <div class="table-wrap" role="region" aria-labelledby="tab-groups-caption" tabindex="0">
       <table>
-        <thead><tr><th>参数组</th><th>是什么</th><th>学习率</th><th class="num">排行榜上</th><th class="num">Betas</th><th class="num">Weight decay</th></tr></thead>
+        <colgroup>
+          <col class="group-name">
+          <col class="group-desc">
+          <col class="group-lr">
+          <col class="group-peak">
+          <col class="group-betas">
+          <col class="group-decay">
+        </colgroup>
+        <thead><tr><th scope="col">参数组</th><th scope="col">是什么</th><th scope="col">学习率</th><th scope="col" class="num">排行榜上</th><th scope="col" class="num">Betas</th><th scope="col" class="num">Weight decay</th></tr></thead>
         <tbody>
-          <tr><td>输出头</td><td>把最后一层的向量变成 32,768 个词的打分</td><td class="mono">0.008 · b · d</td><td class="num">0.008</td><td class="num">(0.8, 0.96)</td><td class="num">0.01</td></tr>
-          <tr><td>词嵌入</td><td>每个 token 一行向量</td><td class="mono">0.3 · b · d</td><td class="num">0.3</td><td class="num">(0.8, 0.995)</td><td class="num">0.001</td></tr>
-          <tr><td>Value embeddings</td><td>隔层给注意力的 value 额外加一份按 token 查表的向量</td><td class="mono">0.15 · b · d</td><td class="num">0.15</td><td class="num">(0.8, 0.995)</td><td class="num">0.01</td></tr>
-          <tr><td>残差系数</td><td>每层一个数，缩放残差流</td><td class="mono">0.005 · b</td><td class="num">0.0071</td><td class="num">(0.8, 0.95)</td><td class="num">0.05</td></tr>
-          <tr><td>x0 系数</td><td>每层一个数，把最初的词嵌入混回来</td><td class="mono">0.5 · b</td><td class="num">0.71</td><td class="num">(0.96, 0.95)</td><td class="num">0</td></tr>
-          <tr><td>Smear 与 backout</td><td>smear 把前一个 token 的嵌入混进当前 token；backout 在输出前减掉一部分中间层的残差</td><td class="mono">0.2（固定）</td><td class="num">0.2</td><td class="num">(0.8, 0.95)</td><td class="num">0</td></tr>
-          <tr><td>辅助参数与其余标量</td><td>登记过的辅助参数（稀疏注意力的 indexer、线性注意力的门和衰减、halter、残差映射等），以及没被认领的一维参数</td><td class="mono">0.0006 · b</td><td class="num">0.00085</td><td class="num">(0.9, 0.95)</td><td class="num">0</td></tr>
-          <tr><td>Muon</td><td>其余所有二维矩阵：注意力的 Q、K、V、O 和 MLP，按形状分桶</td><td class="mono">0.02 · b</td><td class="num">0.028</td><td class="num">β₂ = 0.9</td><td>见第 4 节</td></tr>
+          <tr><th scope="row">输出头</th><td>把最后一层的向量变成 32,768 个词的打分</td><td class="mono">0.008 · b · d</td><td class="num">0.008</td><td class="num">(0.8, 0.96)</td><td class="num">0.01</td></tr>
+          <tr><th scope="row">词嵌入</th><td>每个 token 一行向量</td><td class="mono">0.3 · b · d</td><td class="num">0.3</td><td class="num">(0.8, 0.995)</td><td class="num">0.001</td></tr>
+          <tr><th scope="row">Value embeddings</th><td>隔层给注意力的 value 额外加一份按 token 查表的向量</td><td class="mono">0.15 · b · d</td><td class="num">0.15</td><td class="num">(0.8, 0.995)</td><td class="num">0.01</td></tr>
+          <tr><th scope="row">残差系数</th><td>每层一个数，缩放残差流</td><td class="mono">0.005 · b</td><td class="num">0.0071</td><td class="num">(0.8, 0.95)</td><td class="num">0.05</td></tr>
+          <tr><th scope="row">x0 系数</th><td>每层一个数，把最初的词嵌入混回来</td><td class="mono">0.5 · b</td><td class="num">0.71</td><td class="num">(0.96, 0.95)</td><td class="num">0</td></tr>
+          <tr><th scope="row">Smear 与 backout</th><td>smear 把前一个 token 的嵌入混进当前 token；backout 在输出前减掉一部分中间层的残差</td><td class="mono">0.2（固定）</td><td class="num">0.2</td><td class="num">(0.8, 0.95)</td><td class="num">0</td></tr>
+          <tr><th scope="row">辅助参数与其余标量</th><td>登记过的辅助参数（稀疏注意力的 indexer、线性注意力的门和衰减、halter、残差映射等），以及没被认领的一维参数</td><td class="mono">0.0006 · b</td><td class="num">0.00085</td><td class="num">(0.9, 0.95)</td><td class="num">0</td></tr>
+          <tr><th scope="row">Muon</th><td>其余所有二维矩阵：注意力的 Q、K、V、O 和 MLP，按形状分桶</td><td class="mono">0.02 · b</td><td class="num">0.028</td><td class="num">β₂ = 0.9</td><td>见第 4 节</td></tr>
         </tbody>
       </table>
       </div>
@@ -208,21 +341,31 @@
 
     <p>最大的 0.71（x0 系数）和最小的 0.00085（辅助参数）差了 800 多倍。下面三处最值得多看一眼。</p>
 
-    <h3>不同组的 β₂ 差很多</h3>
-
-    <p>Adam 会记一个「梯度平方的滑动平均」，用它决定每个参数走多大步。β₂ 越接近 1，这个平均看的历史越长，大约是 1 ÷ (1 − β₂) 步：词嵌入的 0.995 约等于看最近 200 步，输出头的 0.96 约 25 步，标量的 0.95 约 20 步。</p>
-
-    <p>词嵌入要看这么长，是因为它每个 token 一行，只有这个 token 出现在 batch 里，那一行才有梯度。冷门 token 可能很多步都碰不到，窗口太短，这个平均值就会忽大忽小。输出头每一步每一行都有梯度，用不着那么长的窗口。</p>
-
-    <p>x0 系数正好反过来：β₁ = 0.96 比 β₂ = 0.95 还大。也就是说，「方向」的平均窗口（约 25 步）比「幅度」的平均窗口（约 20 步）还长。常见配置里很少这样设，代码也没有写原因。</p>
-
-    <h3>eps 取 1e-10</h3>
-
-    <p>Adam 的步长大致是「梯度均值 ÷（√梯度平方均值 + eps）」。eps 本来只是防止除以 0 的小数，常见默认值是 1e-8。可一旦梯度本身很小，它就开始起作用：假如某个参数的梯度只有 1e-8 量级，eps = 1e-8 会让它的步长直接减半，eps = 1e-10 只会减小约 1%。取 1e-10，是让每个参数走多远始终由学习率决定，不被 eps 悄悄压小。</p>
-
-    <h3>smear 和 backout 固定 0.2</h3>
-
-    <p>这是唯一既不乘批量系数、也不乘宽度系数的一组。不管 batch 多大、模型多宽，它都是 0.2。可以理解为：这几个门合适的学习率，被当成了门自身的性质，而不是模型规模的性质。</p>
+    <div class="parameter-notes">
+      <div class="parameter-note">
+        <h3 id="note-beta">不同组的 β₂ 差很多</h3>
+        <details>
+          <summary aria-labelledby="note-beta"></summary>
+          <p>Adam 会记一个「梯度平方的滑动平均」，用它决定每个参数走多大步。β₂ 越接近 1，这个平均看的历史越长，大约是 1 ÷ (1 − β₂) 步：词嵌入的 0.995 约等于看最近 200 步，输出头的 0.96 约 25 步，标量的 0.95 约 20 步。</p>
+          <p>词嵌入要看这么长，是因为它每个 token 一行，只有这个 token 出现在 batch 里，那一行才有梯度。冷门 token 可能很多步都碰不到，窗口太短，这个平均值就会忽大忽小。输出头每一步每一行都有梯度，用不着那么长的窗口。</p>
+          <p>x0 系数正好反过来：β₁ = 0.96 比 β₂ = 0.95 还大。也就是说，「方向」的平均窗口（约 25 步）比「幅度」的平均窗口（约 20 步）还长。常见配置里很少这样设，代码也没有写原因。</p>
+        </details>
+      </div>
+      <div class="parameter-note">
+        <h3 id="note-eps">eps 取 1e-10</h3>
+        <details>
+          <summary aria-labelledby="note-eps"></summary>
+          <p>Adam 的步长大致是「梯度均值 ÷（√梯度平方均值 + eps）」。eps 本来只是防止除以 0 的小数，常见默认值是 1e-8。可一旦梯度本身很小，它就开始起作用：假如某个参数的梯度只有 1e-8 量级，eps = 1e-8 会让它的步长直接减半，eps = 1e-10 只会减小约 1%。取 1e-10，是让每个参数走多远始终由学习率决定，不被 eps 悄悄压小。</p>
+        </details>
+      </div>
+      <div class="parameter-note">
+        <h3 id="note-smear">smear 和 backout 固定 0.2</h3>
+        <details>
+          <summary aria-labelledby="note-smear"></summary>
+          <p>这是唯一既不乘批量系数、也不乘宽度系数的一组。不管 batch 多大、模型多宽，它都是 0.2。可以理解为：这几个门合适的学习率，被当成了门自身的性质，而不是模型规模的性质。</p>
+        </details>
+      </div>
+    </div>
 
     <h3 id="s3-1"><span class="no">3.1</span>为什么只有三组乘宽度系数</h3>
 
@@ -230,11 +373,11 @@
 
     <p>Muon 对一组同形状矩阵做一次更新，分这几步（<span class="mono">nanochat/optim.py</span> 的 <span class="mono">muon_step_fused</span>）：</p>
 
-    <ol>
+    <ol class="muon-steps">
       <li><strong>动量：</strong>把这一步的梯度和之前的动量混在一起（Nesterov 动量）。</li>
       <li><strong>行均衡：</strong>把更新矩阵的每一行缩放到一样长。</li>
       <li><strong>正交化：</strong>用 5 步 Polar Express 迭代，把更新变成最接近它的正交矩阵，让各个方向上的幅度差不多。</li>
-      <li><strong>定总量：</strong>把整个更新矩阵的大小（Frobenius 范数）直接设成 √min(行数, 列数)。</li>
+      <li class="key-step"><strong>定总量：</strong>把整个更新矩阵的大小（Frobenius 范数）直接设成 √min(行数, 列数)。</li>
       <li><strong>微调：</strong>用 β₂ = 0.9 的二阶矩（每行或每列只存一个数）调整各行或各列的步长，总量保持不变。</li>
       <li><strong>更新：</strong>权重 ← 权重 − 学习率 ×（更新 + weight decay × 权重），而且衰减只加在更新和权重同号的位置。</li>
     </ol>
@@ -268,15 +411,15 @@
     <figure class="formula">wd = 0.28 × √2 × 110,100,912 ÷ 当前模型的矩阵参数量</figure>
 
     <figure class="tbl" id="tab-wd">
-      <figcaption><strong>表 4.</strong> T3 Vanilla Dense 四个尺寸上 Muon weight decay 的起点。矩阵参数量 = 12 × 层数 × 宽度² + 32,768 × 宽度。</figcaption>
-      <div class="table-wrap">
+      <figcaption id="tab-wd-caption"><strong>表 4.</strong> T3 Vanilla Dense 四个尺寸上 Muon weight decay 的起点。矩阵参数量 = 12 × 层数 × 宽度² + 32,768 × 宽度。</figcaption>
+      <div class="table-wrap" role="region" aria-labelledby="tab-wd-caption" tabindex="0">
       <table>
-        <thead><tr><th>配置</th><th class="num">层数 × 宽度</th><th class="num">矩阵参数量</th><th class="num">Muon weight decay</th><th class="num">相对排行榜</th></tr></thead>
+        <thead><tr><th scope="col">配置</th><th scope="col" class="num">层数 × 宽度</th><th scope="col" class="num">矩阵参数量</th><th scope="col" class="num">Muon weight decay</th><th scope="col" class="num">相对排行榜</th></tr></thead>
         <tbody>
-          <tr><td>L16</td><td class="num">16 × 1,024</td><td class="num">2.35 亿</td><td class="num">0.186</td><td class="num">3.1 倍</td></tr>
-          <tr><td>L20</td><td class="num">20 × 1,280</td><td class="num">4.35 亿</td><td class="num">0.100</td><td class="num">1.7 倍</td></tr>
-          <tr><td>L28</td><td class="num">28 × 1,792</td><td class="num">11.4 亿</td><td class="num">0.038</td><td class="num">0.64 倍</td></tr>
-          <tr><td>L32</td><td class="num">32 × 2,048</td><td class="num">16.8 亿</td><td class="num">0.026</td><td class="num">0.44 倍</td></tr>
+          <tr><th scope="row">L16</th><td class="num">16 × 1,024</td><td class="num">2.35 亿</td><td class="num">0.186</td><td class="num">3.1 倍</td></tr>
+          <tr><th scope="row">L20</th><td class="num">20 × 1,280</td><td class="num">4.35 亿</td><td class="num">0.100</td><td class="num">1.7 倍</td></tr>
+          <tr><th scope="row">L28</th><td class="num">28 × 1,792</td><td class="num">11.4 亿</td><td class="num">0.038</td><td class="num">0.64 倍</td></tr>
+          <tr><th scope="row">L32</th><td class="num">32 × 2,048</td><td class="num">16.8 亿</td><td class="num">0.026</td><td class="num">0.44 倍</td></tr>
         </tbody>
       </table>
       </div>
@@ -291,7 +434,7 @@
     <p>调度由一个函数 <span class="mono">set_schedule</span> 负责，三条训练路径共用。它每一步同时改三样东西（图 1）。</p>
 
     <figure class="wide" id="fig-schedule">
-      <div class="fig-body">
+      <div class="fig-body" role="region" aria-labelledby="sched-title" tabindex="0">
 <svg class="sched" viewBox="0 0 760 450" role="img" aria-labelledby="sched-title sched-desc">
 <title id="sched-title">49B 排行榜训练中的三条调度曲线</title>
 <desc id="sched-desc">学习率前 40 步升到峰值，保持到第 16,406 步后线性降到 5%；Muon 动量前 400 步从 0.85 升到 0.97，第 16,406 步后降到 0.90；Muon weight decay 按余弦从 100% 降到 0。</desc>
