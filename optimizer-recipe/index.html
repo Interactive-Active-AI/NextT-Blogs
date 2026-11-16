@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Eight Learning Rates and Three Schedules: Reading NextTransformer's Optimizer Recipe</title>
+  <meta name="description" content="NextTransformer freezes its optimizer so that architectures can be compared. This post reads the recipe back out of the code: two transfer scalars, eight parameter groups, a weight decay that is really a parameter count, and three schedules that run at once.">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Eight Learning Rates and Three Schedules: Reading NextTransformer's Optimizer Recipe">
+  <meta property="og:description" content="Two transfer scalars, eight parameter groups, a weight decay that is really a parameter count, and three schedules running at once.">
+  <meta property="og:image" content="https://interactive-active-ai.github.io/NextTransformer/brand/social-preview.jpg">
+  <link rel="icon" href="../attnres-canon/favicon.svg" type="image/svg+xml">
+  <link rel="alternate" hreflang="zh-CN" href="zh/">
+  <!-- This post wears the same look as the first one and borrows its stylesheet and brand assets. -->
+  <link rel="stylesheet" href="../attnres-canon/styles.css">
+  <style>
+    .lead { max-width: 60ch; margin: 16px 0 0; color: var(--ink-soft); font-size: 17px; line-height: 1.7; }
+    .formula { display: block; margin: 18px auto; max-width: var(--measure); padding: 16px 20px; border: 1px solid var(--line);
+      border-radius: 12px; background: var(--surface); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 14.5px; line-height: 1.85; overflow-x: auto; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; }
+  </style>
+</head>
+<body>
+<div class="dream-sky" aria-hidden="true"><i></i><i></i><span>✦</span><span>✧</span><span>✦</span></div>
+<div class="progress" aria-hidden="true"><span></span></div>
+<header class="topbar">
+  <div class="brand-cluster">
+    <a class="brand" href="https://interactive-active-ai.github.io/NextTransformer/" aria-label="NextTransformer Observatory"><span class="brand-mark" aria-hidden="true">N<span>↗</span></span><b>NextTransformer</b></a>
+    <a class="iaai-brand" href="https://github.com/Interactive-Active-AI" aria-label="IAAI · Interactive &amp; Active AI"><img src="../attnres-canon/assets/iaai.png" width="34" height="34" alt="IAAI logo"><b>IAAI</b><span>Interactive <i>&amp;</i> Active AI</span></a>
+  </div>
+  <nav class="header-actions" aria-label="Site links">
+    <a class="header-link" href="../">Blog</a>
+    <a class="header-link" href="https://interactive-active-ai.github.io/NextTransformer/">Observatory</a>
+    <a class="header-link" href="https://interactive-active-ai.github.io/NextTransformer/docs/">Docs</a>
+    <a class="repo-button" href="https://github.com/Interactive-Active-AI/NextTransformer" aria-label="NextTransformer on GitHub"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span>GitHub</span></a>
+    <a class="pill" href="zh/" hreflang="zh-CN" lang="zh-CN">中文</a>
+    <button id="theme-toggle" class="pill" type="button" aria-label="Switch between light and dark theme">Dark</button>
+  </nav>
+</header>
+
+<div class="page">
+<nav class="rail" aria-label="Sections">
+  <div class="rail-title">IN THIS POST</div>
+  <ol>
+    <li><a href="#s1"><span>01</span>A frozen optimizer</a></li>
+    <li><a href="#s2"><span>02</span>Two transfer scalars</a></li>
+    <li><a href="#s3"><span>03</span>Eight groups</a></li>
+    <li class="sub"><a href="#s3-1">Where width scaling lands</a></li>
+    <li class="sub"><a href="#s3-2">Covering every parameter</a></li>
+    <li><a href="#s4"><span>04</span>Weight decay is a parameter count</a></li>
+    <li><a href="#s5"><span>05</span>Three schedules at once</a></li>
+    <li><a href="#s6"><span>06</span>What is deliberately absent</a></li>
+    <li><a href="#s7"><span>07</span>What we do not know</a></li>
+  </ol>
+</nav>
+
+<main id="top">
+<article>
+  <header class="post-head">
+    <p class="eyebrow">NextTransformer Blog / Protocol</p>
+    <h1>Eight Learning Rates and Three Schedules<span class="sr">: </span><em>Reading NextTransformer's optimizer recipe</em></h1>
+    <p class="post-meta"><span>NextTransformer</span><span>November 2026</span><span>About 9 min read</span></p>
+    <p class="lead">The optimizer is usually the part of a training run people tune. Here it is the part nobody is allowed to touch, and that constraint shapes every number in it.</p>
+  </header>
+
+  <nav class="toc" aria-label="In this post">
+    <div class="toc-title">In this post</div>
+    <ol>
+      <li><a href="#s1">A frozen optimizer is part of the instrument</a></li>
+      <li><a href="#s2">Two scalars carry the transfer</a></li>
+      <li><a href="#s3">Not one learning rate, eight</a></li>
+      <li class="sub"><a href="#s3-1">3.1 Where width scaling lands, and where it does not</a></li>
+      <li class="sub"><a href="#s3-2">3.2 Covering every parameter exactly once</a></li>
+      <li><a href="#s4">Weight decay is a parameter count in disguise</a></li>
+      <li><a href="#s5">Three schedules running at once</a></li>
+      <li><a href="#s6">What is deliberately absent</a></li>
+      <li><a href="#s7">What we do not know</a></li>
+      <li><a href="#refs">Sources</a></li>
+    </ol>
+  </nav>
+
+  <section>
+    <h2 id="s1"><span class="no">01</span>A frozen optimizer is part of the instrument</h2>
+
+    <p>NextTransformer compares architectures. Everything that is not the architecture has to be held still, or a comparison measures the tuning budget instead of the design. So the optimizer is pinned by the protocol, down to the beta values of individual scalar groups, and the pinned values are hashed into the fingerprint that every published result carries.</p>
+
+    <p>That inverts the usual incentive. A tuned recipe wants to be the best recipe for the model in front of it. A frozen recipe wants to be the <em>least surprising</em> recipe across models it has never seen, because the next architecture someone submits will have to live with it. Reading the code with that in mind makes several choices legible that otherwise look arbitrary.</p>
+
+    <p>Everything below is in <span class="mono">nexttransformer/native/optimizer.py</span> and <span class="mono">nexttransformer/protocol/spec.py</span>. The protocol's base rates are five numbers:</p>
+
+    <figure class="tbl" id="tab-base">
+      <figcaption><strong>Table 1.</strong> Base learning rates, before any scaling.</figcaption>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Group</th><th class="num">Base rate</th></tr></thead>
+        <tbody>
+          <tr><td>Muon, on block matrices</td><td class="num">0.02</td></tr>
+          <tr><td>Embedding</td><td class="num">0.3</td></tr>
+          <tr><td>Unembedding</td><td class="num">0.008</td></tr>
+          <tr><td>Scalars</td><td class="num">0.5</td></tr>
+          <tr><td>Auxiliary AdamW</td><td class="num">0.0006</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </figure>
+
+    <p>They span a factor of 800, and none of them is the rate any parameter actually gets.</p>
+  </section>
+
+  <section>
+    <h2 id="s2"><span class="no">02</span>Two scalars carry the transfer</h2>
+
+    <p>Between the base rates and the rates in the optimizer sit two multipliers, and they answer two separate questions.</p>
+
+    <figure class="formula">dscale = (width / 768) <sup>−1/2</sup>
+bscale = sqrt(global_batch_tokens / 524288)</figure>
+
+    <p>Both are written as ratios against a reference point rather than as absolute formulas, and the reference point is the model the rates were originally tuned on: nanochat's d12, width 768, with a 2<sup>19</sup>-token batch. The recipe is not claiming to know the right learning rate for an arbitrary model. It is claiming to know how to move a rate it trusts to a model of a different width and a different batch.</p>
+
+    <p>The protocol runs at 2<sup>20</sup> tokens per update, so <span class="mono">bscale</span> is exactly √2 for every registered run, and it is the square-root batch rule: double the batch, raise the rate by √2. The width rule is the inverse square root, so a width-1,280 model gets 0.775 of the reference rate and a width-2,048 model gets 0.612.</p>
+
+    <figure class="tbl" id="tab-dscale">
+      <figcaption><strong>Table 2.</strong> Width transfer at the T3 scaling widths.</figcaption>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th class="num">Width</th><th class="num">768</th><th class="num">1,024</th><th class="num">1,280</th><th class="num">1,792</th><th class="num">2,048</th></tr></thead>
+        <tbody>
+          <tr><td>dscale</td><td class="num">1.000</td><td class="num">0.866</td><td class="num">0.775</td><td class="num">0.655</td><td class="num">0.612</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </figure>
+  </section>
+
+  <section>
+    <h2 id="s3"><span class="no">03</span>Not one learning rate, eight</h2>
+
+    <p>The recipe does not have an optimizer with a learning rate. It has eight or nine parameter groups, each with its own rate, its own betas and its own weight decay. Table 3 is the whole thing.</p>
+
+    <figure class="tbl wide" id="tab-groups">
+      <figcaption><strong>Table 3.</strong> Every parameter group. <span class="mono">b</span> is bscale, <span class="mono">d</span> is dscale. All AdamW groups use eps = 1e-10.</figcaption>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th>Group</th><th>Rate</th><th class="num">Betas</th><th class="num">Weight decay</th></tr></thead>
+        <tbody>
+          <tr><td>Output head</td><td class="mono">0.008 · b · d</td><td class="num">(0.8, 0.96)</td><td class="num">0.01</td></tr>
+          <tr><td>Token embedding</td><td class="mono">0.3 · b · d</td><td class="num">(0.8, 0.995)</td><td class="num">0.001</td></tr>
+          <tr><td>Value embeddings</td><td class="mono">0.3 · b · d · 0.5</td><td class="num">(0.8, 0.995)</td><td class="num">0.01</td></tr>
+          <tr><td>Residual lambdas</td><td class="mono">0.5 · b · 0.01</td><td class="num">(0.8, 0.95)</td><td class="num">0.05</td></tr>
+          <tr><td>x0 lambdas</td><td class="mono">0.5 · b</td><td class="num">(0.96, 0.95)</td><td class="num">0</td></tr>
+          <tr><td>Smear gate, smear and backout lambdas</td><td class="mono">0.2</td><td class="num">(0.8, 0.95)</td><td class="num">0</td></tr>
+          <tr><td>Routers and halters</td><td class="mono">0.0006 · b · m</td><td class="num">(0.9, 0.95)</td><td class="num">0</td></tr>
+          <tr><td>Remaining scalars</td><td class="mono">0.0006 · b</td><td class="num">(0.9, 0.95)</td><td class="num">0</td></tr>
+          <tr><td>Muon, bucketed by matrix shape</td><td class="mono">0.02 · b</td><td class="num">β₂ = 0.9</td><td>see §4</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </figure>
+
+    <p>Three details in that table are easy to read past.</p>
+
+    <p>The <strong>betas are not shared</strong>. Embeddings run β₂ = 0.995 while the output head runs 0.96, a difference of roughly an order of magnitude in the effective averaging window of the second moment. Embedding gradients are sparse — a given token's row is touched only when that token appears — so a long window is how you get a usable second-moment estimate at all. The output head sees every example and does not need one. The <span class="mono">x0</span> lambdas invert the usual arrangement entirely, with β₁ = 0.96 above β₂ = 0.95.</p>
+
+    <p><strong>eps is 1e-10</strong> across every AdamW group, four orders of magnitude below the common 1e-8. With a tiny eps, Adam stays close to pure sign-like normalization even where gradients are small, instead of quietly becoming SGD in the small-gradient regime.</p>
+
+    <p>The <strong>smear gate is the one rate that never scales</strong>. It is a fixed 0.2, untouched by batch or width. Every other group in the model moves when the batch moves; this one is pinned, which reads as a gate whose useful rate is a property of the gate rather than of the run.</p>
+
+    <h3 id="s3-1"><span class="no">3.1</span>Where width scaling lands, and where it does not</h3>
+
+    <p>Only three groups get <span class="mono">dscale</span>: the output head, the token embedding and the value embeddings. Muon does not. The scalars do not. The auxiliary AdamW groups do not.</p>
+
+    <p>That line falls exactly where the parameters are indexed by vocabulary rather than by width — the matrices whose fan-in grows with the model while the number of gradient contributions per row does not. The block matrices are left to Muon, whose update is orthogonalized by a Newton–Schulz iteration and therefore already has a norm set by the iteration rather than by the gradient scale. Reading it that way, the recipe applies width transfer precisely where the update rule does not supply it.</p>
+
+    <h3 id="s3-2"><span class="no">3.2</span>Covering every parameter exactly once</h3>
+
+    <p>After the groups are built, the code collects every unclaimed parameter, sorts two-dimensional ones into Muon buckets keyed on <span class="mono">tuple(p.shape)</span> and everything else into a scalar AdamW group, and then asserts that the groups cover the model's parameters exactly once — no duplicates, no omissions.</p>
+
+    <p>For a repository that accepts architecture submissions from outside, this assertion is doing real work. The failure it prevents is not a crash; it is a new module's parameters silently receiving a default rate, or two, and a result being published on a run nobody knew was misconfigured. The bucketing by shape is a separate concern: Newton–Schulz is a batched matrix operation, so same-shaped matrices have to travel together.</p>
+  </section>
+
+  <section>
+    <h2 id="s4"><span class="no">04</span>Weight decay is a parameter count in disguise</h2>
+
+    <p>The protocol lists weight decay as 0.28. No parameter is decayed by 0.28.</p>
+
+    <figure class="formula">wd = 0.28 · bscale · 110,100,912 / 729,810,624  ≈  0.0597</figure>
+
+    <p>Those two constants are the matrix parameter counts of nanochat's d12 and d24. The rule is nanochat's: decay scales inversely with the number of matrix parameters, so a bigger model is decayed less per parameter. The 0.28 is a rate expressed in d12 units, and the ratio converts it to the model actually being trained.</p>
+
+    <p>The reference comparison pins the denominator to d24, because that is the one model it trains. The scaling study cannot, since its whole purpose is to vary size, so <span class="mono">nexttransformer/scaling/optimizer.py</span> substitutes the real count:</p>
+
+    <figure class="formula">scaling_params(model) = block parameters + output head
+muon_weight_decay = 0.28 · bscale · 110,100,912 / scaling_params(model)</figure>
+
+    <p>At d24 the two agree exactly, which is what makes the substitution safe: the scaling study and the reference protocol do not disagree at the point where they overlap. It is a small piece of engineering with an outsized role, because a hyperparameter rule that silently changes meaning across a size sweep would contaminate the size curve the sweep exists to measure.</p>
+  </section>
+
+  <section>
+    <h2 id="s5"><span class="no">05</span>Three schedules running at once</h2>
+
+    <p>There is one function that sets schedules, and it moves three different things on three different curves.</p>
+
+    <p><strong>Learning rate.</strong> Forty updates of linear warmup, then flat, then the final 65% of training decays linearly to 5% of peak. A 65% warmdown is long by convention; most of the run is spent on the way down rather than at the top.</p>
+
+    <p><strong>Muon momentum.</strong> It climbs from 0.85 to 0.97 over the first 400 updates, holds at 0.97, and then falls to 0.90 across the warmdown — on the same boundary where the learning rate starts dropping. Early on, when the weights are moving fastest, the momentum buffer holds the least stale history. Late on, as the rate decays, momentum is released rather than tightened, which keeps the effective step from collapsing as fast as the rate alone would make it.</p>
+
+    <p><strong>Muon weight decay.</strong> A cosine from its full value at step 0 to zero at the end, independent of the learning rate curve. Regularization is strongest while the model is still choosing what to represent and is gone by the time it is settling.</p>
+
+    <p>The learning-rate schedule is the one everyone writes down. The other two are the ones that would be silently different between two submissions if the protocol did not pin them.</p>
+  </section>
+
+  <section>
+    <h2 id="s6"><span class="no">06</span>What is deliberately absent</h2>
+
+    <p>There is no global gradient clipping. For a frozen protocol that is a deliberate position: a global clip is a safety net that also quietly rescales the comparison whenever one architecture's gradients are larger than another's, and it would make instability look like a tuning difference rather than a property of the design.</p>
+
+    <p>What exists instead is two targeted clips, applied after gradient accumulation and before the step, to exactly the components that need them — Circle's halter and the loopformer's conditioner. Both are architecture-specific control paths rather than ordinary weights. The pattern generalizes to new submissions: an exception is allowed, it is named, and it is preregistered before pilots rather than discovered during them.</p>
+  </section>
+
+  <section>
+    <h2 id="s7"><span class="no">07</span>What we do not know</h2>
+
+    <p>Honesty about the limits matters more here than usual, because the recipe is frozen and will not be re-tuned per submission.</p>
+
+    <p>The base rates were tuned on one model at one width with one batch size. The two transfer scalars are standard rules, not measurements on this codebase, and nothing in the repository currently demonstrates that the square-root batch rule and the inverse-square-root width rule hold across the full range the scaling study will cover. The T3 study spans widths 1,024 to 2,048, which is where that assumption first gets tested at four points on one compute budget — and if it fails, it will show up as curvature in the size curve that has nothing to do with architecture.</p>
+
+    <p>The per-group betas and decays are inherited, and we have no ablation isolating any one of them. The routing coefficients for the mixture-of-experts families are explicitly marked as pilot settings rather than a registered recipe.</p>
+
+    <p>None of this undermines the comparison the protocol is built to make. Every architecture meets the same recipe, so a difference between two results is still a difference between two designs. It does mean the recipe is a fixed choice rather than a demonstrated optimum, and the size curve is the first thing that will tell us how good a choice it was.</p>
+  </section>
+
+  <section class="references">
+    <h2 id="refs"><span class="no">08</span>Sources</h2>
+    <p class="cite"><span class="mono">nexttransformer/native/optimizer.py</span> — parameter groups, transfer scalars and the three schedules.</p>
+    <p class="cite"><span class="mono">nexttransformer/scaling/optimizer.py</span> — the weight-decay rule applied to the model actually trained.</p>
+    <p class="cite"><span class="mono">nexttransformer/protocol/spec.py</span> — the pinned base rates, warmup, warmdown and final fraction.</p>
+    <p class="cite"><a href="https://interactive-active-ai.github.io/NextTransformer/docs/protocol/training/">Optimizer, schedule and layouts</a> — the protocol documentation these numbers come from.</p>
+  </section>
+</article>
+</main>
+</div>
+
+<div class="footer-wrap">
+<footer class="site-footer">
+  <a class="footer-brand" href="https://interactive-active-ai.github.io/NextTransformer/">NextTransformer <span>·</span> a study of computation</a>
+  <div><a href="../">Blog</a><a href="https://interactive-active-ai.github.io/NextTransformer/">Observatory</a><a href="https://interactive-active-ai.github.io/NextTransformer/docs/">Docs</a><a href="https://github.com/Interactive-Active-AI/NextTransformer">GitHub</a></div>
+</footer>
+</div>
+<script src="../attnres-canon/site.js"></script>
+</body>
+</html>
